@@ -1,0 +1,55 @@
+name: Build IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Find project
+        run: |
+          if [ -d PlanFlow.xcodeproj ]; then
+            echo "PROJ_DIR=$PWD" >> "$GITHUB_ENV"
+          else
+            Z=$(ls *.zip | head -1)
+            unzip -q "$Z" -d src
+            P=$(find src -type d -name "PlanFlow.xcodeproj" | head -1)
+            echo "PROJ_DIR=$PWD/$(dirname "$P")" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build
+        run: |
+          cd "$PROJ_DIR"
+          xcodebuild \
+            -project PlanFlow.xcodeproj \
+            -target PlanFlow \
+            -configuration Release \
+            -sdk iphoneos \
+            SYMROOT="$GITHUB_WORKSPACE/build" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Make IPA
+        run: |
+          mkdir -p Payload
+          cp -R build/Release-iphoneos/PlanFlow.app Payload/
+          zip -qry PlanFlow.ipa Payload
+          ls -lh PlanFlow.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: PlanFlow-ipa
+          path: PlanFlow.ipa
