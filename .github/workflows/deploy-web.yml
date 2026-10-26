@@ -1,0 +1,42 @@
+name: Deploy Web
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find web folder
+        run: |
+          if [ -f web/firebase.json ]; then
+            echo "WEB_DIR=$PWD/web" >> "$GITHUB_ENV"
+          else
+            Z=$(ls *.zip | head -1)
+            unzip -q "$Z" -d src
+            F=$(find src -path "*web/firebase.json" | head -1)
+            echo "WEB_DIR=$PWD/$(dirname "$F")" >> "$GITHUB_ENV"
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Deploy to Firebase
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$SA" ]; then
+            echo "::error::Missing secret FIREBASE_SERVICE_ACCOUNT"
+            exit 1
+          fi
+          printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          PID=$(jq -r .project_id "$RUNNER_TEMP/sa.json")
+          cd "$WEB_DIR"
+          npx --yes firebase-tools@13 deploy --only hosting,firestore:rules --project "$PID" --non-interactive
+          echo "::notice::Website: https://$PID.firebaseapp.com"
